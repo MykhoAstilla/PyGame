@@ -1,0 +1,214 @@
+import pygame
+import sys
+import os
+import math
+
+# Initialize Pygame
+pygame.init()
+
+# Screen dimensions - wider screen
+WIDTH, HEIGHT = 1400, 700
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Character Selector")
+clock = pygame.time.Clock()
+font = pygame.font.SysFont('Arial', 30)
+small_font = pygame.font.SysFont('Arial', 24)
+
+# Character PNGs directory
+image_path = r"C:\Users\Mykho\Downloads"
+
+# Character image names (no extension)
+character_names = [
+    "Character1", "Character2", "Character3", "Character4",
+    "Character5", "Character6", "Character7", "Character8"
+]
+
+# Load background image
+try:
+    background = pygame.image.load(os.path.join(image_path, "Background.jpg")).convert()
+    background = pygame.transform.scale(background, (WIDTH, HEIGHT))
+except:
+    print("Background image not found, using fallback color")
+    background = pygame.Surface((WIDTH, HEIGHT))
+    background.fill((100, 150, 200))  # Fallback color
+
+# Load and scale character images - smaller size
+CHARACTER_HEIGHT = 150  # Reduced from 200
+characters = []
+
+for name in character_names:
+    file_path = os.path.join(image_path, name + ".png")
+    if os.path.exists(file_path):
+        img = pygame.image.load(file_path).convert_alpha()
+        ow, oh = img.get_size()
+        scale = CHARACTER_HEIGHT / oh
+        img = pygame.transform.scale(img, (int(ow * scale), CHARACTER_HEIGHT))
+        characters.append({"img": img, "name": name})
+    else:
+        print(f"Missing: {file_path}")
+
+# If no characters found, create placeholder characters
+if not characters:
+    for i, name in enumerate(character_names):
+        # Create a simple character silhouette as placeholder
+        char_surface = pygame.Surface((75, CHARACTER_HEIGHT), pygame.SRCALPHA)
+        color = (100 + i*20, 150, 255 - i*20)  # Varied colors without random
+        pygame.draw.ellipse(char_surface, color, (0, 0, 75, 135))
+        pygame.draw.circle(char_surface, color, (37, 30), 30)
+        characters.append({"img": char_surface, "name": name})
+
+# Game state
+current_character_index = 0
+selection_mode = True
+player_img = None
+player_rect = None
+facing = "right"
+speed = 5
+bounce_timer = 0
+
+# Arrow buttons for navigation - adjusted for wider screen
+left_arrow = pygame.Rect(100, HEIGHT // 2, 50, 50)
+right_arrow = pygame.Rect(WIDTH - 150, HEIGHT // 2, 50, 50)
+
+def select_character(index):
+    global player_img, player_rect, facing, bounce_timer
+    player_img = characters[index]["img"]
+    player_rect = player_img.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+    facing = "right"
+    bounce_timer = 0
+
+# Game loop
+running = True
+while running:
+    dt = clock.tick(60)
+    screen.blit(background, (0, 0))
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if selection_mode:
+                    running = False
+                else:
+                    selection_mode = True
+            
+            # Character selection controls
+            if selection_mode:
+                if event.key == pygame.K_LEFT or event.key == pygame.K_a:
+                    current_character_index = (current_character_index - 1) % len(characters)
+                elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
+                    current_character_index = (current_character_index + 1) % len(characters)
+                elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                    select_character(current_character_index)
+                    selection_mode = False
+        
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if selection_mode:
+                # Check if arrows were clicked
+                if left_arrow.collidepoint(event.pos):
+                    current_character_index = (current_character_index - 1) % len(characters)
+                elif right_arrow.collidepoint(event.pos):
+                    current_character_index = (current_character_index + 1) % len(characters)
+                
+                # Check if character was clicked for selection
+                char_rect = characters[current_character_index]["img"].get_rect(
+                    center=(WIDTH // 2, HEIGHT // 2 - 50)
+                )
+                if char_rect.collidepoint(event.pos):
+                    select_character(current_character_index)
+                    selection_mode = False
+
+    if selection_mode:
+        # Draw semi-transparent overlay
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))  # Darker overlay for better contrast with background
+        screen.blit(overlay, (0, 0))
+        
+        # Draw heading with simpler style
+        title = font.render("CHOOSE YOUR CHARACTER", True, (255, 255, 255))
+        title_shadow = font.render("CHOOSE YOUR CHARACTER", True, (0, 0, 0))
+        screen.blit(title_shadow, (WIDTH // 2 - title.get_width() // 2 + 2, 42))
+        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 40))
+        
+        # Draw character in spotlight
+        current_char = characters[current_character_index]["img"]
+        char_rect = current_char.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
+        
+        # Draw spotlight effect
+        spotlight = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        pygame.draw.circle(spotlight, (255, 255, 255, 100), char_rect.center, 150)
+        screen.blit(spotlight, (0, 0))
+        
+        # Draw character
+        screen.blit(current_char, char_rect)
+        
+        # Draw character name
+        name_text = small_font.render(characters[current_character_index]["name"], True, (255, 255, 255))
+        screen.blit(name_text, (WIDTH // 2 - name_text.get_width() // 2, HEIGHT // 2 + 100))
+        
+        # Draw navigation arrows
+        pygame.draw.polygon(screen, (255, 255, 255), [
+            (left_arrow.left + 10, left_arrow.centery),
+            (left_arrow.right - 10, left_arrow.top + 10),
+            (left_arrow.right - 10, left_arrow.bottom - 10)
+        ])
+        
+        pygame.draw.polygon(screen, (255, 255, 255), [
+            (right_arrow.right - 10, right_arrow.centery),
+            (right_arrow.left + 10, right_arrow.top + 10),
+            (right_arrow.left + 10, right_arrow.bottom - 10)
+        ])
+        
+        # Draw selection instructions
+        instructions = small_font.render("Use LEFT/RIGHT arrows to browse, ENTER to select", True, (255, 255, 255))
+        screen.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 100))
+        
+        # Show character count
+        count_text = small_font.render(f"{current_character_index + 1}/{len(characters)}", True, (255, 255, 255))
+        screen.blit(count_text, (WIDTH // 2 - count_text.get_width() // 2, HEIGHT - 60))
+        
+    else:
+        # Game play mode
+        keys = pygame.key.get_pressed()
+        moving = False
+
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            player_rect.x -= speed
+            facing = "left"
+            moving = True
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            player_rect.x += speed
+            facing = "right"
+            moving = True
+        if keys[pygame.K_UP] or keys[pygame.K_w]:
+            player_rect.y -= speed
+            moving = True
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            player_rect.y += speed
+            moving = True
+
+        # Constrain player to screen bounds
+        player_rect.x = max(0, min(WIDTH - player_rect.width, player_rect.x))
+        player_rect.y = max(0, min(HEIGHT - player_rect.height, player_rect.y))
+
+        # Simulated bounce effect
+        bounce_timer += 0.2 if moving else 0
+        offset = int(2 * abs(math.sin(bounce_timer)))
+
+        # Flip image if facing left
+        img_to_draw = pygame.transform.flip(player_img, True, False) if facing == "left" else player_img
+        screen.blit(img_to_draw, (player_rect.x, player_rect.y + offset))
+
+        # Draw game instructions
+        instruction_bg = pygame.Surface((WIDTH, 40), pygame.SRCALPHA)
+        instruction_bg.fill((0, 0, 0, 128))
+        screen.blit(instruction_bg, (0, HEIGHT - 40))
+        
+        label = small_font.render("Use arrow keys or WASD to move. ESC to return to character selection.", True, (255, 255, 255))
+        screen.blit(label, (WIDTH // 2 - label.get_width() // 2, HEIGHT - 35))
+
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
