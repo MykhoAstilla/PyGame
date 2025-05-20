@@ -1,0 +1,1413 @@
+import pygame, sys, os, math, random, time
+
+# Initialize
+pygame.init()
+WIDTH, HEIGHT = 1400, 700
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Forest Defenders: Magical Numbers Adventure")
+clock = pygame.time.Clock()
+font = pygame.font.SysFont('Arial', 30)
+title_font = pygame.font.SysFont('Arial', 40, bold=True)
+small_font = pygame.font.SysFont('Arial', 24)
+dialog_font = pygame.font.SysFont('Arial', 22)
+GROUND_LEVEL = HEIGHT - 210
+image_path = r"C:\Users\Mykho\Downloads"
+character_names = ["C1", "C2", "C3"]
+
+# Game states
+INTRO, CHARACTER_SELECT, GAMEPLAY = 0, 1, 2
+
+# Load backgrounds
+try:
+    cavern_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Cavern.gif")).convert(), (WIDTH, HEIGHT))
+    selection_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background.jpg")).convert(), (WIDTH, HEIGHT))
+    gameplay_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background0.png")).convert(), (WIDTH, HEIGHT))
+    stage3_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background1.gif")).convert(), (WIDTH, HEIGHT))
+except Exception as e:
+    print(f"Background error: {e}")
+    selection_background = pygame.Surface((WIDTH, HEIGHT))
+    selection_background.fill((100, 150, 200))
+    gameplay_background = pygame.Surface((WIDTH, HEIGHT))
+    gameplay_background.fill((120, 170, 220))
+    cavern_background = pygame.Surface((WIDTH, HEIGHT))
+    cavern_background.fill((30, 40, 80))
+    stage3_background = pygame.Surface((WIDTH, HEIGHT))
+    stage3_background.fill((50, 80, 50))
+    
+background = selection_background
+
+# Load gem images
+gem_images = []
+for i in range(1, 4):
+    try:
+        gem_images.append(pygame.transform.scale(pygame.image.load(os.path.join(image_path, f"Gem{i}.png")).convert_alpha(), (80, 80)))
+    except Exception as e:
+        print(f"Gem{i} loading error: {e}")
+        # Create fallback colored square
+        temp_img = pygame.Surface((80, 80), pygame.SRCALPHA)
+        temp_img.fill((random.randint(50, 255), random.randint(50, 255), random.randint(50, 255), 200))
+        gem_images.append(temp_img)
+
+# Load characters
+CHARACTER_HEIGHT = 200
+characters = []
+for name in character_names:
+    file_path = os.path.join(image_path, name + ".png")
+    if os.path.exists(file_path):
+        img = pygame.image.load(file_path).convert_alpha()
+        scale = CHARACTER_HEIGHT / img.get_height()
+        img = pygame.transform.scale(img, (int(img.get_width() * scale), CHARACTER_HEIGHT))
+        characters.append({"img": img, "name": name})
+    else:
+        print(f"Missing: {file_path}")
+if not characters:
+    for i, name in enumerate(character_names):
+        char_surface = pygame.Surface((75, CHARACTER_HEIGHT), pygame.SRCALPHA)
+        color = (100 + i*20, 150, 255 - i*20)
+        pygame.draw.ellipse(char_surface, color, (0, 0, 75, 135))
+        pygame.draw.circle(char_surface, color, (37, 30), 30)
+        characters.append({"img": char_surface, "name": name})
+
+# Helper function
+def scale_image_to_height(image, target_height):
+    scale_ratio = target_height / image.get_height()
+    return pygame.transform.scale(image, (int(image.get_width() * scale_ratio), target_height))
+
+# Load NPCs
+try:
+    npc_img = pygame.transform.flip(scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC1.0.png")).convert_alpha(), 200), True, False)
+    cavern_npc_img = pygame.transform.flip(scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC2.0.png")).convert_alpha(), 200), True, False)
+except Exception as e:
+    print(f"NPC loading error: {e}")
+    npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
+    cavern_npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
+
+npc_rect = npc_img.get_rect(bottomleft=(WIDTH - 200, HEIGHT - 200))
+cavern_npc_rect = cavern_npc_img.get_rect(bottomleft=(WIDTH - 200, HEIGHT - 200))
+
+# Stage 3 platforms
+platforms = [
+    pygame.Rect(100, HEIGHT - 150, 150, 20),
+    pygame.Rect(350, HEIGHT - 170, 120, 20),
+    pygame.Rect(550, HEIGHT - 190, 140, 20),
+    pygame.Rect(800, HEIGHT - 160, 130, 20),
+    pygame.Rect(1050, HEIGHT - 180, 150, 20),
+    pygame.Rect(1300, HEIGHT - 150, 100, 20)
+]
+
+# Questions
+stage1_questions = [
+    {"question": "If the guardian collects 28 magical crystals and uses 13 for a spell, how many remain?", "answer": 15, "options": [12, 15, 16, 14]},
+    {"question": "The guardian needs 45 energy points to create a forcefield. With 27 already gathered, how many more must they find?", "answer": 18, "options": [17, 18, 19, 20]},
+    {"question": "Shadow creatures appear every 12 minutes. After 36 minutes, how many times have they visited our realm?", "answer": 3, "options": [3, 4, 5, 6]},
+    {"question": "A magical potion requires 24 drops of moonwater and 9 drops of sunlight essence. How many drops in total?", "answer": 33, "options": [31, 32, 33, 34]},
+    {"question": "Each protective enchantment lasts 17 minutes. To protect the forest for 85 minutes, how many enchantments must be cast?", "answer": 5, "options": [4, 5, 6, 7]}
+]
+
+stage2_questions = [
+    {"question": "The crystal sage needs to multiply 7 crystals by their power level of 8. What's the total energy?", "answer": 56, "options": [54, 55, 56, 57]},
+    {"question": "Six magical cave formations each contain 9 power nodes. How many nodes total?", "answer": 54, "options": [52, 53, 54, 55]},
+    {"question": "The cavern enchantment requires 7 groups of 12 crystal shards. How many shards in total?", "answer": 84, "options": [82, 83, 84, 85]},
+    {"question": "Each of the 11 ancient pillars needs 6 energy cores. How many cores are needed altogether?", "answer": 66, "options": [64, 65, 66, 67]},
+    {"question": "There are 9 crystal clusters, each with 8 crystals. How many crystals in all?", "answer": 72, "options": [70, 71, 72, 73]}
+]
+
+# Game state variables
+game_state = INTRO
+intro_timer = 0
+current_character_index = 0
+player_img, player_rect, facing = None, None, "right"
+speed, jump_velocity, jump_strength, gravity = 5, 0, -15, 0.8
+on_ground, bounce_timer = True, 0
+game_stage, dialog_active = 0, False
+current_dialog, dialog_index = [], 0
+current_question, question_answered = None, False
+questions_completed, show_intro, intro_shown = 0, False, False
+stage_complete, answer_feedback = False, ""
+feedback_timer, showing_feedback = 0, False
+transition_to_stage2, transition_timer, switching_stage = False, 0, False
+stage2_intro_shown = False
+stage3_intro_shown = False
+transition_to_stage3, on_platform = False, False
+stage3_ground_level = HEIGHT - 50  # Different ground level for stage 3
+
+# Navigation
+left_arrow = pygame.Rect(100, HEIGHT // 2, 50, 50)
+right_arrow = pygame.Rect(WIDTH - 150, HEIGHT // 2, 50, 50)
+
+# Dialog content - Compressed into lists of strings
+story_intro = [
+    "In the enchanted realm of Numeralis, harmony has long been maintained by the Three Crystal Gems of Magical Knowledge.",
+    "Each gem governs a vital domain of mathematical wisdom: Addition, Multiplication, and Division.",
+    "But disaster has struck! The tyrannical Shadow King has shattered the gems and hidden the fragments across three magical regions!",
+    "Without these gems, the natural order is unraveling — forests withering, caverns collapsing, the very fabric of our world in chaos.",
+    "Ancient prophecies speak of a chosen hero who will restore the gems, defeat the Shadow King, and bring balance back to Numeralis.",
+    "You must journey through three mystical realms, solving challenges that test your magical arithmetic abilities.",
+    "The fate of Numeralis rests in your hands. Are you ready to become the hero we desperately need?",
+    "Press SPACE to choose your character and begin your quest..."
+]
+
+# Other dialog lists
+dialogs = {
+    "intro": [
+        "Welcome to the Enchanted Forest, brave adventurer!",
+        "Our peaceful realm is under threat by the Shadow King, who has stolen the three Crystal Gems that maintain balance.",
+        "Without these gems, the magical numbers and ancient symbols of our world are falling into chaos!",
+        "You must journey through three realms to recover the crystal gems, using your magical reasoning skills to overcome challenges.",
+        "In each realm, you'll need to solve mystical puzzles to gather energy for the final confrontation.",
+        "This first area is the Whispering Woods, where the Forest Guardian awaits your help.",
+        "Reach the Forest Guardian on the right side of the screen to begin your quest.",
+        "Use arrow keys or WASD to move, and SPACE to jump. Good luck, young hero!"
+    ],
+    "npc_greeting": [
+        "Greetings, young hero! I am the Guardian of the Whispering Woods.",
+        "The Shadow King's minions have disrupted our forest's magical balance.",
+        "I need your help with mystical calculations to restore our protective enchantments.",
+        "Solve my magical challenges, and I'll grant you the power to proceed to the next realm.",
+        "Are you ready to begin your first challenge? (Press SPACE to continue)"
+    ],
+    "npc_next": [
+        "Excellent work, young wizard! But our forest still needs protection.",
+        "Here's another puzzle that needs your magical reasoning powers.",
+        "Focus your mind and trust your instincts! (Press SPACE to continue)"
+    ],
+    "npc_success": [
+        "Remarkable! Your magical reasoning skills are truly impressive!",
+        "You've helped restore balance to the Whispering Woods.",
+        "I grant you this fragment of the Crystal Gem of Addition.",
+        "I hereby give you this piece of robe as well for your journey.",
+        "Ahead lies the Mystic Caverns, where new challenges await.",
+        "The Cavern Guardian will test your powers of multiplication.",
+        "Be brave, and remember: magical numbers are your allies!",
+        "This fragment will transport you to the Caverns when you're ready.",
+        "(Press SPACE to continue to the Mystic Caverns - Stage 2)"
+    ],
+    "stage2_intro": [
+        "You've entered the Mystic Caverns, home to ancient crystals of great power.",
+        "The shimmering crystals cast an ethereal glow throughout the cavern.",
+        "In this sacred place, you must harness the power of multiplication to restore balance.",
+        "Find the Crystal Sage deeper in the cavern to begin your challenges.",
+        "(Use arrow keys or WASD to move, and SPACE to jump)"
+    ],
+    "cavern_greeting": [
+        "Ah, a visitor from the surface! I am the Crystal Sage of the Mystic Caverns.",
+        "The Shadow King's corruption has reached even these depths, disrupting our crystal formations.",
+        "We must use the power of multiplication to realign the magical energy flows.",
+        "Are you ready to test your multiplication skills? The cavern's fate depends on it!",
+        "(Press SPACE to continue)"
+    ],
+    "cavern_next": [
+        "Well done! Your magical arithmetic skills are impressive.",
+        "But there are more crystal formations that need realignment.",
+        "Here's another mystical calculation for you to solve.",
+        "(Press SPACE to continue)"
+    ],
+    "cavern_success": [
+        "Magnificent! You've successfully realigned all the crystal formations!",
+        "The Mystic Caverns once again resonate with harmonious energy.",
+        "Take this fragment of the Crystal Gem of Multiplication as a token of our gratitude.",
+        "Your next challenge awaits in the path beyond - the Emerald Ravine.",
+        "You must navigate through the treacherous waters by jumping across the platforms.",
+        "The Division Guardian awaits at the end of this challenge.",
+        "(Press SPACE to continue to the Emerald Ravine - Stage 3)"
+    ],
+    "stage3_intro": [
+        "You've entered the Emerald Ravine, a beautiful but dangerous place.",
+        "The magical waters here are too powerful for direct contact.",
+        "You'll need to jump across the platforms to reach the other side.",
+        "Be careful! The platforms are slippery and require precise timing.",
+        "Find your way to the right side of the ravine to continue your quest.",
+        "(Use arrow keys or WASD to move, and SPACE to jump)"
+    ]
+}
+
+intro_dialog = dialogs["intro"]
+npc_greeting = dialogs["npc_greeting"]
+npc_next_question = dialogs["npc_next"]
+npc_success = dialogs["npc_success"]
+stage2_intro = dialogs["stage2_intro"]
+cavern_npc_greeting = dialogs["cavern_greeting"]
+cavern_npc_next_question = dialogs["cavern_next"]
+cavern_npc_success = dialogs["cavern_success"]
+stage3_intro = dialogs["stage3_intro"]
+
+# Game functions
+def select_character(index):
+    global player_img, player_rect, facing, bounce_timer, background, game_stage, show_intro, game_state
+    player_img = characters[index]["img"]
+    player_rect = player_img.get_rect(bottom=GROUND_LEVEL, x=100)
+    facing, bounce_timer = "right", 0
+    background, game_stage, show_intro = gameplay_background, 1, True
+    game_state = GAMEPLAY
+
+def return_to_selection():
+    global game_state, background, game_stage, dialog_active, current_dialog, dialog_index
+    global show_intro, intro_shown, stage_complete, questions_completed, showing_feedback
+    global stage2_intro_shown, stage3_intro_shown
+    game_state, background, game_stage = CHARACTER_SELECT, selection_background, 0
+    dialog_active, current_dialog, dialog_index = False, [], 0
+    show_intro, intro_shown, stage_complete = False, False, False
+    questions_completed, showing_feedback = 0, False
+    stage2_intro_shown, stage3_intro_shown = False, False
+
+def transition_to_cavern():
+    global game_stage, background, player_rect, stage_complete, questions_completed
+    global dialog_active, current_dialog, dialog_index, transition_to_stage2, switching_stage
+    global stage2_intro_shown, show_intro, player_img, current_question
+    
+    # Reset variables
+    game_stage = 2
+    background = cavern_background
+    player_rect.bottom, player_rect.x = GROUND_LEVEL, 100
+    stage_complete = False
+    questions_completed = 0
+    dialog_active = True
+    current_dialog = stage2_intro
+    dialog_index = 0
+    transition_to_stage2 = False
+    switching_stage = False
+    stage2_intro_shown = False
+    show_intro = True
+    current_question = None
+    
+    # Change character to C2 for the Mystic Caverns stage
+    for char in characters:
+        if char["name"] == "C2":
+            player_img = char["img"]
+            break
+
+def transition_to_stage3():
+    global game_stage, background, player_rect, stage_complete, questions_completed
+    global dialog_active, current_dialog, dialog_index, transition_to_stage3, switching_stage
+    global stage3_intro_shown, show_intro, player_img, current_question
+    
+    # Reset variables
+    game_stage = 3
+    background = stage3_background
+    player_rect.bottom, player_rect.x = stage3_ground_level, 100
+    stage_complete = False
+    questions_completed = 0
+    dialog_active = True
+    current_dialog = stage3_intro
+    dialog_index = 0
+    transition_to_stage3 = False
+    switching_stage = False
+    stage3_intro_shown = False
+    show_intro = True
+    current_question = None
+    
+    # Change character to C3 for the Emerald Ravine stage
+    for char in characters:
+        if char["name"] == "C3":
+            player_img = char["img"]
+            break
+
+def show_dialog(dialog_lines):
+    global dialog_active, current_dialog, dialog_index
+    dialog_active, current_dialog, dialog_index = True, dialog_lines, 0
+
+def next_dialog():
+    global dialog_index, dialog_active, intro_shown, show_intro, current_question
+    global transition_to_stage2, switching_stage, stage2_intro_shown
+    global transition_to_stage3, stage3_intro_shown, game_state
+    
+    if dialog_index < len(current_dialog) - 1:
+        dialog_index += 1
+    else:
+        dialog_active = False
+        
+        # Handle different dialog endings
+        if current_dialog == story_intro:
+            game_state = CHARACTER_SELECT
+        elif current_dialog == intro_dialog:
+            intro_shown, show_intro = True, False
+        elif current_dialog == stage2_intro:
+            stage2_intro_shown = True
+        elif current_dialog == stage3_intro:
+            stage3_intro_shown = True
+        elif current_dialog in (npc_greeting, npc_next_question) and game_stage == 1:
+            start_question(stage1_questions)
+        elif current_dialog in (cavern_npc_greeting, cavern_npc_next_question) and game_stage == 2:
+            start_question(stage2_questions)
+        elif current_dialog == npc_success:
+            transition_to_cavern()
+        elif current_dialog == cavern_npc_success:
+            transition_to_stage3()
+
+def start_question(question_set):
+    global current_question, question_answered
+    if questions_completed < len(question_set):
+        current_question = question_set[questions_completed]
+        random.shuffle(current_question["options"])
+        question_answered = False
+
+def check_answer(selected_option):
+    global question_answered, questions_completed, stage_complete, answer_feedback, showing_feedback, feedback_timer
+    
+    correct = selected_option == current_question["answer"]
+    answer_feedback = "Correct! Your magical reasoning is strong!" if correct else "Not quite right. Try a different magical approach!"
+    showing_feedback, feedback_timer = True, 180
+    
+    if correct:
+        question_answered = True
+        questions_completed += 1
+        
+        if ((game_stage == 1 and questions_completed >= len(stage1_questions)) or 
+            (game_stage == 2 and questions_completed >= len(stage2_questions))):
+            stage_complete = True
+
+def check_platform_collision():
+    global on_ground, player_rect, jump_velocity
+    
+    # Only check for platforms in Stage 3
+    if game_stage != 3:
+        return
+    
+    on_platform = False
+    for platform in platforms:
+        # Check if falling onto platform
+        if player_rect.bottom <= platform.top + 10 and player_rect.bottom + jump_velocity >= platform.top:
+            if player_rect.right > platform.left and player_rect.left < platform.right:
+                player_rect.bottom = platform.top
+                on_ground = True
+                jump_velocity = 0
+                on_platform = True
+                break
+    
+    # Set on_ground flag based on platform collision
+    if not on_platform and game_stage == 3:
+        # In stage 3, player can only be on ground if on a platform
+        if player_rect.bottom >= stage3_ground_level:
+            # Hit water/bottom
+            player_rect.bottom = stage3_ground_level
+            on_ground = True
+            jump_velocity = 0
+            # Reset player position (falling in water)
+            player_rect.x = 100
+            player_rect.bottom = stage3_ground_level
+
+# Drawing functions - compressed into fewer lines where possible
+def draw_dialog_box():
+    dialog_box = pygame.Surface((WIDTH - 200, 150), pygame.SRCALPHA)
+    dialog_box.fill((0, 0, 0, 200))
+    screen.blit(dialog_box, (100, HEIGHT - 200))
+    
+    if dialog_index < len(current_dialog):
+        text = dialog_font.render(current_dialog[dialog_index], True, (255, 255, 255))
+        screen.blit(text, (120, HEIGHT - 170))
+    
+    continue_text = small_font.render("Press SPACE to continue..." if dialog_index < len(current_dialog) - 1 else "Press SPACE to close", True, (200, 200, 200))
+    screen.blit(continue_text, (WIDTH - 350, HEIGHT - 80))
+
+def draw_question_box():
+    question_box = pygame.Surface((WIDTH - 200, 300), pygame.SRCALPHA)
+    question_box.fill((0, 0, 0, 200))
+    screen.blit(question_box, (100, HEIGHT - 350))
+    
+    question_text = dialog_font.render(current_question["question"], True, (255, 255, 255))
+    screen.blit(question_text, (120, HEIGHT - 320))
+    
+    for i, option in enumerate(current_question["options"]):
+        option_rect = pygame.Rect(120 + (i * 300), HEIGHT - 250, 250, 50)
+        pygame.draw.rect(screen, (100, 100, 180), option_rect)
+        pygame.draw.rect(screen, (255, 255, 255), option_rect, 2)
+        
+        option_text = dialog_font.render(str(option), True, (255, 255, 255))
+        screen.blit(option_text, (option_rect.centerx - option_text.get_width()//2, option_rect.centery - option_text.get_height()//2))
+
+def draw_feedback():
+    feedback_box = pygame.Surface((WIDTH - 400, 80), pygame.SRCALPHA)
+    feedback_box.fill((0, 0, 0, 200))
+    screen.blit(feedback_box, (200, 200))
+    
+    feedback_text = font.render(answer_feedback, True, (255, 255, 255))
+    screen.blit(feedback_text, (WIDTH // 2 - feedback_text.get_width() // 2, 240))
+
+def draw_intro_screen():
+    # Dark overlay for better text visibility
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 160))
+    screen.blit(overlay, (0, 0))
+    
+    # Draw title
+    title = title_font.render("FOREST DEFENDERS", True, (255, 215, 0))
+    subtitle = font.render("Magical Numbers Adventure", True, (255, 255, 255))
+    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 50))
+    screen.blit(subtitle, (WIDTH // 2 - subtitle.get_width() // 2, 100))
+    
+    # Draw gems in spinning pattern
+    for i in range(3):
+        angle = intro_timer * 0.03 + (i * (2 * math.pi / 3))
+        x = WIDTH // 2 + int(200 * math.cos(angle)) - 40
+        y = HEIGHT // 2 + int(100 * math.sin(angle)) - 40
+        screen.blit(gem_images[i], (x, y))
+    
+    # Draw dialog box
+    draw_dialog_box()
+
+def draw_platforms():
+    if game_stage == 3:
+        for platform in platforms:
+            pygame.draw.rect(screen, (100, 150, 100), platform)
+            # Add some visual indication
+            pygame.draw.rect(screen, (120, 180, 120), platform, 2)
+
+# Game loop
+running = True
+# Start with intro sequence
+dialog_active = True
+current_dialog = story_intro
+dialog_index = 0
+
+while running:
+    dt = clock.tick(60)
+    intro_timer += 1
+    
+    # Set background based on game stage
+    if game_state == GAMEPLAY:
+        if game_stage == 1:
+            background = gameplay_background
+        elif game_stage == 2:
+            background = cavern_background
+        elif game_stage == 3:
+            background = stage3_background
+    elif game_state in [INTRO, CHARACTER_SELECT]:
+        background = selection_background
+        
+    screen.blit(background, (0, 0))
+    
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if game_state == GAMEPLAY: 
+                    return_to_selection()
+                else:
+                    running = False
+            
+            if event.key == pygame.K_SPACE:
+                if dialog_active: 
+                    next_dialog()
+                elif game_state == GAMEPLAY and on_ground and not showing_feedback and not switching_stage:
+                    jump_velocity, on_ground = jump_strength, False
+            
+            # Character selection controls
+            if game_state == CHARACTER_SELECT:
+                if event.key in (pygame.K_LEFT, pygame.K_a):
+                    current_character_index = (current_character_index - 1) % len(characters)
+                elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                    current_character_index = (current_character_index + 1) % len(characters)
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    select_character(current_character_index)
+                    show_dialog(intro_dialog)
+        
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if game_state == CHARACTER_SELECT:
+                if left_arrow.collidepoint(event.pos):
+                    current_character_index = (current_character_index - 1) % len(characters)
+                elif right_arrow.collidepoint(event.pos):
+                    current_character_index = (current_character_index + 1) % len(characters)
+                
+                char_rect = characters[current_character_index]["img"].get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
+                if char_rect.collidepoint(event.pos):
+                    select_character(current_character_index)
+                    show_dialog(intro_dialog)
+            
+            # Question answer selection
+            elif game_state == GAMEPLAY and current_question and not question_answered and not showing_feedback and not switching_stage:
+                for i, option in enumerate(current_question["options"]):
+                    option_rect = pygame.Rect(120 + (i * 300), HEIGHT - 250, 250, 50)
+                    if option_rect.collidepoint(event.pos):
+                        check_answer(option)
+    
+    # Draw different screens based on game state
+    if game_state == INTRO:
+        draw_intro_screen()
+        
+    elif game_state == CHARACTER_SELECT:
+        # Character selection screen
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        screen.blit(overlay, (0, 0))
+        
+        title = font.render("CHOOSE YOUR HERO", True, (255, 255, 255))
+        title_shadow = font.render("CHOOSE YOUR HERO", True, (0, 0, 0))
+        screen.blit(title_shadow, (WIDTH // 2 - title.get_width() // 2 + 2, 42))
+        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 40))
+        
+        current_char = characters[current_character_index]["img"]
+        char_rect = current_char.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
+        
+        # Spotlight effect
+        spotlight = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        pygame.draw.circle(spotlight, (255, 255, 255, 100), char_rect.center, 150)
+        screen.blit(spotlight, (0, 0))
+        screen.blit(current_char, char_rect)
+        
+        name_text = small_font.render(characters[current_character_index]["name"], True, (255, 255, 255))
+        screen.blit(name_text, (WIDTH // 2 - name_text.get_width() // 2, HEIGHT // 2 + 100))
+        
+        # Draw arrow navigation buttons
+        pygame.draw.polygon(screen, (255, 255, 255), [
+            (left_arrow.left + 10, left_arrow.centery),
+            (left_arrow.right - 10, left_arrow.top + 10),
+            (left_arrow.right - 10, left_arrow.bottom - 10)
+        ])
+        pygame.draw.polygon(screen, (255, 255, 255), [
+            (right_arrow.right - 10, right_arrow.centery),
+            (right_arrow.left + 10, right_arrow.top + 10),
+            (right_arrow.left + 10, right_arrow.bottom - 10)
+        ])
+        
+        instructions = small_font.render("Use LEFT/RIGHT arrows to browse, ENTER to select", True, (255, 255, 255))
+        screen.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 100))
+        
+        count_text = small_font.render(f"{current_character_index + 1}/{len(characters)}", True, (255, 255, 255))
+        screen.blit(count_text, (WIDTH // 2 - count_text.get_width() // 2, HEIGHT - 60))
+        
+    elif game_state == GAMEPLAY:
+        # Gameplay mode
+        keys = pygame.key.get_pressed()
+        moving = False
+        
+        # Process feedback timer
+        if showing_feedback:
+            feedback_timer -= 1
+            if feedback_timer <= 0:
+                showing_feedback = False
+                
+                if stage_complete:
+                    show_dialog(npc_success if game_stage == 1 else cavern_npc_success)
+                elif question_answered:
+                    show_dialog(npc_next_question if game_stage == 1 else cavern_npc_next_question)
+                    current_question = None
+                    
+        # Check if movement is allowed
+        can_move = not (dialog_active or showing_feedback or 
+                      (current_question and not question_answered) or 
+                      switching_stage)
+                      
+        if can_move:
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                player_rect.x -= speed
+                facing, moving = "left", True
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                player_rect.x += speed
+                facing, moving = "right", True
+            
+            # Gravity and jumping
+            if not on_ground:
+                player_rect.y += jump_velocity
+                jump_velocity += gravity
+                
+                # Check platform collision in stage 3
+                if game_stage == 3:
+                    check_platform_collision()
+                elif player_rect.bottom >= GROUND_LEVEL:
+                    player_rect.bottom, on_ground, jump_velocity = GROUND_LEVEL, True, 0
+                    
+        # Constrain player to screen
+        player_rect.x = max(0, min(WIDTH - player_rect.width, player_rect.x))
+        
+        # NPC interactions
+        if not dialog_active and not showing_feedback:
+            # Stage 1 NPC interaction
+            if game_stage == 1 and player_rect.colliderect(npc_rect) and intro_shown and not current_question:
+                if questions_completed < len(stage1_questions):
+                    show_dialog(npc_greeting if questions_completed == 0 else npc_next_question)
+                elif questions_completed >= len(stage1_questions) and not stage_complete:
+                    stage_complete = True
+                    show_dialog(npc_success)
+            
+            # Stage 2 NPC interaction
+            if game_stage == 2 and player_rect.colliderect(cavern_npc_rect) and stage2_intro_shown and not current_question:
+                if questions_completed < len(stage2_questions):
+                    show_dialog(cavern_npc_greeting if questions_completed == 0 else cavern_npc_next_question)
+                elif questions_completed >= len(stage2_questions) and not stage_complete:
+                    stage_complete = True
+                    show_dialog(cavern_npc_success)
+            
+            # Stage 3 completion check - reach the right side of the screen
+            if game_stage == 3 and player_rect.right > WIDTH - 100 and stage3_intro_shown:
+                # Victory condition for stage 3
+                stage_complete = True
+                # You can add further dialogs or transitions here if needed
+        
+        # Bounce animation
+        bounce_offset = int(2 * abs(math.sin(bounce_timer))) if on_ground else 0
+        if on_ground and moving:
+            bounce_timer += 0.2
+        
+        # Draw appropriate NPC for current stage
+        if game_stage == 1:
+            screen.blit(npc_img, npc_rect)
+        elif game_stage == 2:
+            screen.blit(cavern_npc_img, cavern_npc_rect)
+        
+        # Draw platforms for stage 3
+        if game_stage == 3:
+            draw_platforms()
+        
+        # Stage indicators
+        stage_titles = ["Whispering Woods of Addition", "Mystic Caverns of Multiplication", "Emerald Ravine of Division"]
+        stage_text = font.render(f"Stage {game_stage}: {stage_titles[game_stage-1]}", True, (255, 255, 255))
+        screen.blit(stage_text, (20, 20))
+        
+        # For stages 1 and 2, show question progress
+        if game_stage in [1, 2]:
+            progress_text = small_font.render(f"Challenges: {questions_completed}/{len(stage1_questions if game_stage == 1 else stage2_questions)}", True, (255, 255, 255))
+            screen.blit(progress_text, (20, 60))
+        # For stage 3, show progress tip about reaching the exit
+        elif game_stage == 3:
+            progress_text = small_font.render("Goal: Reach the exit on the right side", True, (255, 255, 255))
+            screen.blit(progress_text, (20, 60))
+        
+        # Draw player with bounce effect
+        draw_pos = player_rect.copy()
+        draw_pos.y -= bounce_offset
+        screen.blit(pygame.transform.flip(player_img, facing == "left", False), draw_pos)
+        
+        # Handle dialog sequences
+        if show_intro and not intro_shown and not dialog_active:
+            show_dialog(intro_dialog)
+            
+        if game_stage == 2 and not stage2_intro_shown and not dialog_active:
+            show_dialog(stage2_intro)
+            
+        if game_stage == 3 and not stage3_intro_shown and not dialog_active:
+            show_dialog(stage3_intro)
+        
+        # Draw UI elements
+        if dialog_active:
+            draw_dialog_box()
+        
+        if current_question and not question_answered and not showing_feedback:
+            draw_question_box()
+
+        if showing_feedback:
+            draw_feedback()
+            
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pygame, sys, os, math, random, time
+
+# Initialize
+pygame.init()
+WIDTH, HEIGHT = 1400, 700
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Forest Defenders: Magical Numbers Adventure")
+clock = pygame.time.Clock()
+font = pygame.font.SysFont('Arial', 30)
+title_font = pygame.font.SysFont('Arial', 40, bold=True)
+small_font = pygame.font.SysFont('Arial', 24)
+dialog_font = pygame.font.SysFont('Arial', 22)
+GROUND_LEVEL = HEIGHT - 210
+image_path = r"C:\Users\Mykho\Downloads"
+character_names = ["C1", "C2", "C3"]
+
+# Game states
+INTRO, CHARACTER_SELECT, GAMEPLAY = 0, 1, 2
+
+# Load backgrounds
+try:
+    cavern_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Cavern.gif")).convert(), (WIDTH, HEIGHT))
+    selection_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background.jpg")).convert(), (WIDTH, HEIGHT))
+    gameplay_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background0.png")).convert(), (WIDTH, HEIGHT))
+    ravine_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background1.gif")).convert(), (WIDTH, HEIGHT))
+except Exception as e:
+    print(f"Background error: {e}")
+    selection_background = pygame.Surface((WIDTH, HEIGHT))
+    selection_background.fill((100, 150, 200))
+    gameplay_background = pygame.Surface((WIDTH, HEIGHT))
+    gameplay_background.fill((120, 170, 220))
+    cavern_background = pygame.Surface((WIDTH, HEIGHT))
+    cavern_background.fill((30, 40, 80))
+    ravine_background = pygame.Surface((WIDTH, HEIGHT))
+    ravine_background.fill((50, 80, 50))
+    
+background = selection_background
+
+# Load gem images
+gem_images = []
+for i in range(1, 4):
+    try:
+        gem_images.append(pygame.transform.scale(pygame.image.load(os.path.join(image_path, f"Gem{i}.png")).convert_alpha(), (80, 80)))
+    except Exception as e:
+        print(f"Gem{i} loading error: {e}")
+        temp_img = pygame.Surface((80, 80), pygame.SRCALPHA)
+        temp_img.fill((random.randint(50, 255), random.randint(50, 255), random.randint(50, 255), 200))
+        gem_images.append(temp_img)
+
+# Load characters
+CHARACTER_HEIGHT = 200
+characters = []
+for name in character_names:
+    file_path = os.path.join(image_path, name + ".png")
+    if os.path.exists(file_path):
+        img = pygame.image.load(file_path).convert_alpha()
+        scale = CHARACTER_HEIGHT / img.get_height()
+        img = pygame.transform.scale(img, (int(img.get_width() * scale), CHARACTER_HEIGHT))
+        characters.append({"img": img, "name": name})
+    else:
+        print(f"Missing: {file_path}")
+if not characters:
+    for i, name in enumerate(character_names):
+        char_surface = pygame.Surface((75, CHARACTER_HEIGHT), pygame.SRCALPHA)
+        color = (100 + i*20, 150, 255 - i*20)
+        pygame.draw.ellipse(char_surface, color, (0, 0, 75, 135))
+        pygame.draw.circle(char_surface, color, (37, 30), 30)
+        characters.append({"img": char_surface, "name": name})
+
+# Helper function
+def scale_image_to_height(image, target_height):
+    scale_ratio = target_height / image.get_height()
+    return pygame.transform.scale(image, (int(image.get_width() * scale_ratio), target_height))
+
+# Load NPCs
+try:
+    npc_img = pygame.transform.flip(scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC1.0.png")).convert_alpha(), 200), True, False)
+    cavern_npc_img = pygame.transform.flip(scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC2.0.png")).convert_alpha(), 200), True, False)
+    ravine_npc_img = pygame.transform.flip(scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC2.0.png")).convert_alpha(), 200), True, False)
+except Exception as e:
+    print(f"NPC loading error: {e}")
+    npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
+    cavern_npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
+    ravine_npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
+
+npc_rect = npc_img.get_rect(bottomleft=(WIDTH - 200, HEIGHT - 200))
+cavern_npc_rect = cavern_npc_img.get_rect(bottomleft=(WIDTH - 200, HEIGHT - 200))
+ravine_npc_rect = ravine_npc_img.get_rect(bottomleft=(WIDTH - 200, HEIGHT - 200))
+
+# Questions
+stage1_questions = [
+    {"question": "If the guardian collects 28 magical crystals and uses 13 for a spell, how many remain?", "answer": 15, "options": [12, 15, 16, 14]},
+    {"question": "The guardian needs 45 energy points to create a forcefield. With 27 already gathered, how many more must they find?", "answer": 18, "options": [17, 18, 19, 20]},
+    {"question": "Shadow creatures appear every 12 minutes. After 36 minutes, how many times have they visited our realm?", "answer": 3, "options": [3, 4, 5, 6]},
+    {"question": "A magical potion requires 24 drops of moonwater and 9 drops of sunlight essence. How many drops in total?", "answer": 33, "options": [31, 32, 33, 34]},
+    {"question": "Each protective enchantment lasts 17 minutes. To protect the forest for 85 minutes, how many enchantments must be cast?", "answer": 5, "options": [4, 5, 6, 7]}
+]
+
+stage2_questions = [
+    {"question": "The crystal sage needs to multiply 7 crystals by their power level of 8. What's the total energy?", "answer": 56, "options": [54, 55, 56, 57]},
+    {"question": "Six magical cave formations each contain 9 power nodes. How many nodes total?", "answer": 54, "options": [52, 53, 54, 55]},
+    {"question": "The cavern enchantment requires 7 groups of 12 crystal shards. How many shards in total?", "answer": 84, "options": [82, 83, 84, 85]},
+    {"question": "Each of the 11 ancient pillars needs 6 energy cores. How many cores are needed altogether?", "answer": 66, "options": [64, 65, 66, 67]},
+    {"question": "There are 9 crystal clusters, each with 8 crystals. How many crystals in all?", "answer": 72, "options": [70, 71, 72, 73]}
+]
+
+ravine_questions = [
+    {"question": "The ravine path divides into 8 equal sections. If you've traveled through 3 sections, what fraction remains?", "answer": "5/8", "options": ["3/8", "5/8", "3/5", "5/3"]},
+    {"question": "A magical barrier requires 45 energy divided equally among 9 crystals. How much energy per crystal?", "answer": 5, "options": [4, 5, 6, 7]},
+    {"question": "The water level rises 24 feet and then recedes 16 feet. What's the net change?", "answer": 8, "options": [7, 8, 9, 10]},
+    {"question": "A spell's power of 72 must be distributed among 6 magical conduits. How much power per conduit?", "answer": 12, "options": [10, 11, 12, 13]},
+    {"question": "The guardian divides 60 protective charms among 5 positions along the ravine. How many at each position?", "answer": 12, "options": [11, 12, 13, 14]}
+]
+
+# Game state variables
+game_state = INTRO
+intro_timer = 0
+current_character_index = 0
+player_img, player_rect, facing = None, None, "right"
+speed, jump_velocity, jump_strength, gravity = 5, 0, -15, 0.8
+on_ground, bounce_timer = True, 0
+game_stage, dialog_active = 0, False
+current_dialog, dialog_index = [], 0
+current_question, question_answered = None, False
+questions_completed, show_intro, intro_shown = 0, False, False
+stage_complete, answer_feedback = False, ""
+feedback_timer, showing_feedback = 0, False
+transition_to_stage2, transition_timer, switching_stage = False, 0, False
+stage2_intro_shown = False
+ravine_intro_shown = False
+transition_to_ravine = False
+
+# Navigation
+left_arrow = pygame.Rect(100, HEIGHT // 2, 50, 50)
+right_arrow = pygame.Rect(WIDTH - 150, HEIGHT // 2, 50, 50)
+
+# Dialog content - Compressed into lists of strings
+story_intro = [
+    "In the enchanted realm of Numeralis, harmony has long been maintained by the Three Crystal Gems of Magical Knowledge.",
+    "Each gem governs a vital domain of mathematical wisdom: Addition, Multiplication, and Division.",
+    "But disaster has struck! The tyrannical Shadow King has shattered the gems and hidden the fragments across three magical regions!",
+    "Without these gems, the natural order is unraveling — forests withering, caverns collapsing, the very fabric of our world in chaos.",
+    "Ancient prophecies speak of a chosen hero who will restore the gems, defeat the Shadow King, and bring balance back to Numeralis.",
+    "You must journey through three mystical realms, solving challenges that test your magical arithmetic abilities.",
+    "The fate of Numeralis rests in your hands. Are you ready to become the hero we desperately need?",
+    "Press SPACE to choose your character and begin your quest..."
+]
+
+# Other dialog lists
+dialogs = {
+    "intro": [
+        "Welcome to the Enchanted Forest, brave adventurer!",
+        "Our peaceful realm is under threat by the Shadow King, who has stolen the three Crystal Gems that maintain balance.",
+        "Without these gems, the magical numbers and ancient symbols of our world are falling into chaos!",
+        "You must journey through three realms to recover the crystal gems, using your magical reasoning skills to overcome challenges.",
+        "In each realm, you'll need to solve mystical puzzles to gather energy for the final confrontation.",
+        "This first area is the Whispering Woods, where the Forest Guardian awaits your help.",
+        "Reach the Forest Guardian on the right side of the screen to begin your quest.",
+        "Use arrow keys or WASD to move, and SPACE to jump. Good luck, young hero!"
+    ],
+    "npc_greeting": [
+        "Greetings, young hero! I am the Guardian of the Whispering Woods.",
+        "The Shadow King's minions have disrupted our forest's magical balance.",
+        "I need your help with mystical calculations to restore our protective enchantments.",
+        "Solve my magical challenges, and I'll grant you the power to proceed to the next realm.",
+        "Are you ready to begin your first challenge? (Press SPACE to continue)"
+    ],
+    "npc_next": [
+        "Excellent work, young wizard! But our forest still needs protection.",
+        "Here's another puzzle that needs your magical reasoning powers.",
+        "Focus your mind and trust your instincts! (Press SPACE to continue)"
+    ],
+    "npc_success": [
+        "Remarkable! Your magical reasoning skills are truly impressive!",
+        "You've helped restore balance to the Whispering Woods.",
+        "I grant you this fragment of the Crystal Gem of Addition.",
+        "I hereby give you this piece of robe as well for your journey.",
+        "Ahead lies the Mystic Caverns, where new challenges await.",
+        "The Cavern Guardian will test your powers of multiplication.",
+        "Be brave, and remember: magical numbers are your allies!",
+        "This fragment will transport you to the Caverns when you're ready.",
+        "(Press SPACE to continue to the Mystic Caverns - Stage 2)"
+    ],
+    "stage2_intro": [
+        "You've entered the Mystic Caverns, home to ancient crystals of great power.",
+        "The shimmering crystals cast an ethereal glow throughout the cavern.",
+        "In this sacred place, you must harness the power of multiplication to restore balance.",
+        "Find the Crystal Sage deeper in the cavern to begin your challenges.",
+        "(Use arrow keys or WASD to move, and SPACE to jump)"
+    ],
+    "cavern_greeting": [
+        "Ah, a visitor from the surface! I am the Crystal Sage of the Mystic Caverns.",
+        "The Shadow King's corruption has reached even these depths, disrupting our crystal formations.",
+        "We must use the power of multiplication to realign the magical energy flows.",
+        "Are you ready to test your multiplication skills? The cavern's fate depends on it!",
+        "(Press SPACE to continue)"
+    ],
+    "cavern_next": [
+        "Well done! Your magical arithmetic skills are impressive.",
+        "But there are more crystal formations that need realignment.",
+        "Here's another mystical calculation for you to solve.",
+        "(Press SPACE to continue)"
+    ],
+    "cavern_success": [
+        "Magnificent! You've successfully realigned all the crystal formations!",
+        "The Mystic Caverns once again resonate with harmonious energy.",
+        "Take this fragment of the Crystal Gem of Multiplication as a token of our gratitude.",
+        "Your next challenge awaits in the path beyond - the Emerald Ravine.",
+        "There you'll need to continue your journey and test your division skills.",
+        "Find the Emerald Guardian when you arrive at the ravine for your next task.",
+        "(Press SPACE to continue to the Emerald Ravine)"
+    ],
+    "ravine_intro": [
+        "You've entered the Emerald Ravine, a beautiful place with flowing magical waters.",
+        "The lush environment pulses with primal energy, ready to be harmonized.",
+        "In this special place, you will learn to master the power of division and balance.",
+        "Find the Ravine Guardian on the right side to begin your next series of challenges.",
+        "(Use arrow keys or WASD to move, and SPACE to jump)"
+    ],
+    "ravine_greeting": [
+        "Welcome to the Emerald Ravine, traveler! I am the Guardian of these sacred waters.",
+        "The ravine's magic depends on perfect balance and division of power.",
+        "The Shadow King's influence has disrupted our delicate equilibrium.",
+        "You must solve our division challenges to restore harmony to these waters.",
+        "Are you ready to begin? The waters of knowledge await!",
+        "(Press SPACE to continue)"
+    ],
+    "ravine_next": [
+        "Impressive! Your mastery of magical division is growing.",
+        "But the waters still need more balance.",
+        "Here's another division challenge for you to solve.",
+        "(Press SPACE to continue)"
+    ],
+    "ravine_success": [
+        "Outstanding! The waters of the ravine flow with perfect harmony once more!",
+        "You've successfully balanced all the energies of this sacred place.",
+        "I present you with this fragment of the Crystal Gem of Division.",
+        "With all three crystal fragments, you now have the power to face greater challenges.",
+        "Your journey is not over yet, but you've completed this important step.",
+        "Rest now, and prepare for the next stage of your adventure against the Shadow King.",
+        "(Press SPACE to continue)"
+    ]
+}
+
+intro_dialog = dialogs["intro"]
+npc_greeting = dialogs["npc_greeting"]
+npc_next_question = dialogs["npc_next"]
+npc_success = dialogs["npc_success"]
+stage2_intro = dialogs["stage2_intro"]
+cavern_npc_greeting = dialogs["cavern_greeting"]
+cavern_npc_next_question = dialogs["cavern_next"]
+cavern_npc_success = dialogs["cavern_success"]
+ravine_intro = dialogs["ravine_intro"]
+ravine_npc_greeting = dialogs["ravine_greeting"]
+ravine_npc_next_question = dialogs["ravine_next"]
+ravine_npc_success = dialogs["ravine_success"]
+
+# Game functions
+def select_character(index):
+    global player_img, player_rect, facing, bounce_timer, background, game_stage, show_intro, game_state
+    player_img = characters[index]["img"]
+    player_rect = player_img.get_rect(bottom=GROUND_LEVEL, x=100)
+    facing, bounce_timer = "right", 0
+    background, game_stage, show_intro = gameplay_background, 1, True
+    game_state = GAMEPLAY
+
+def return_to_selection():
+    global game_state, background, game_stage, dialog_active, current_dialog, dialog_index
+    global show_intro, intro_shown, stage_complete, questions_completed, showing_feedback
+    global stage2_intro_shown, ravine_intro_shown
+    game_state, background, game_stage = CHARACTER_SELECT, selection_background, 0
+    dialog_active, current_dialog, dialog_index = False, [], 0
+    show_intro, intro_shown, stage_complete = False, False, False
+    questions_completed, showing_feedback = 0, False
+    stage2_intro_shown, ravine_intro_shown = False, False
+
+def transition_to_cavern():
+    global game_stage, background, player_rect, stage_complete, questions_completed
+    global dialog_active, current_dialog, dialog_index, transition_to_stage2, switching_stage
+    global stage2_intro_shown, show_intro, player_img, current_question
+    
+    # Reset variables
+    game_stage = 2
+    background = cavern_background
+    player_rect.bottom, player_rect.x = GROUND_LEVEL, 100
+    stage_complete = False
+    questions_completed = 0
+    dialog_active = True
+    current_dialog = stage2_intro
+    dialog_index = 0
+    transition_to_stage2 = False
+    switching_stage = False
+    stage2_intro_shown = False
+    show_intro = True
+    current_question = None
+    
+    # Change character to C2 for the Mystic Caverns stage
+    for char in characters:
+        if char["name"] == "C2":
+            player_img = char["img"]
+            break
+
+def transition_to_ravine():
+    global game_stage, background, player_rect, stage_complete, questions_completed
+    global dialog_active, current_dialog, dialog_index, transition_to_ravine, switching_stage
+    global ravine_intro_shown, show_intro, player_img, current_question
+    
+    # Reset variables
+    game_stage = 3
+    background = ravine_background
+    player_rect.bottom, player_rect.x = GROUND_LEVEL, 100
+    stage_complete = False
+    questions_completed = 0
+    dialog_active = True
+    current_dialog = ravine_intro
+    dialog_index = 0
+    transition_to_ravine = False
+    switching_stage = False
+    ravine_intro_shown = False
+    show_intro = True
+    current_question = None
+    
+    # Change character to C3 for the Emerald Ravine 
+    for char in characters:
+        if char["name"] == "C3":
+            player_img = char["img"]
+            break
+
+def show_dialog(dialog_lines):
+    global dialog_active, current_dialog, dialog_index
+    dialog_active, current_dialog, dialog_index = True, dialog_lines, 0
+
+def next_dialog():
+    global dialog_index, dialog_active, intro_shown, show_intro, current_question
+    global transition_to_stage2, switching_stage, stage2_intro_shown
+    global transition_to_ravine, ravine_intro_shown, game_state
+    
+    if dialog_index < len(current_dialog) - 1:
+        dialog_index += 1
+    else:
+        dialog_active = False
+        
+        # Handle different dialog endings
+        if current_dialog == story_intro:
+            game_state = CHARACTER_SELECT
+        elif current_dialog == intro_dialog:
+            intro_shown, show_intro = True, False
+        elif current_dialog == stage2_intro:
+            stage2_intro_shown = True
+        elif current_dialog == ravine_intro:
+            ravine_intro_shown = True
+        elif current_dialog in (npc_greeting, npc_next_question) and game_stage == 1:
+            start_question(stage1_questions)
+        elif current_dialog in (cavern_npc_greeting, cavern_npc_next_question) and game_stage == 2:
+            start_question(stage2_questions)
+        elif current_dialog in (ravine_npc_greeting, ravine_npc_next_question) and game_stage == 3:
+            start_question(ravine_questions)
+        elif current_dialog == npc_success:
+            transition_to_cavern()
+        elif current_dialog == cavern_npc_success:
+            transition_to_ravine()
+        # Add more conditions for future stages as needed
+
+def start_question(question_set):
+    global current_question, question_answered
+    if questions_completed < len(question_set):
+        current_question = question_set[questions_completed]
+        random.shuffle(current_question["options"])
+        question_answered = False
+
+def check_answer(selected_option):
+    global question_answered, questions_completed, stage_complete, answer_feedback, showing_feedback, feedback_timer
+    
+    correct = selected_option == current_question["answer"]
+    answer_feedback = "Correct! Your magical reasoning is strong!" if correct else "Not quite right. Try a different magical approach!"
+    showing_feedback, feedback_timer = True, 180
+    
+    if correct:
+        question_answered = True
+        questions_completed += 1
+        
+        if ((game_stage == 1 and questions_completed >= len(stage1_questions)) or 
+            (game_stage == 2 and questions_completed >= len(stage2_questions)) or
+            (game_stage == 3 and questions_completed >= len(ravine_questions))):
+            stage_complete = True
+
+# Drawing functions - compressed into fewer lines where possible
+def draw_dialog_box():
+    dialog_box = pygame.Surface((WIDTH - 200, 150), pygame.SRCALPHA)
+    dialog_box.fill((0, 0, 0, 200))
+    screen.blit(dialog_box, (100, HEIGHT - 200))
+    
+    if dialog_index < len(current_dialog):
+        text = dialog_font.render(current_dialog[dialog_index], True, (255, 255, 255))
+        screen.blit(text, (120, HEIGHT - 170))
+    
+    continue_text = small_font.render("Press SPACE to continue..." if dialog_index < len(current_dialog) - 1 else "Press SPACE to close", True, (200, 200, 200))
+    screen.blit(continue_text, (WIDTH - 350, HEIGHT - 80))
+
+def draw_question_box():
+    question_box = pygame.Surface((WIDTH - 200, 300), pygame.SRCALPHA)
+    question_box.fill((0, 0, 0, 200))
+    screen.blit(question_box, (100, HEIGHT - 350))
+    
+    question_text = dialog_font.render(current_question["question"], True, (255, 255, 255))
+    screen.blit(question_text, (120, HEIGHT - 320))
+    
+    for i, option in enumerate(current_question["options"]):
+        option_rect = pygame.Rect(120 + (i * 300), HEIGHT - 250, 250, 50)
+        pygame.draw.rect(screen, (100, 100, 180), option_rect)
+        pygame.draw.rect(screen, (255, 255, 255), option_rect, 2)
+        
+        option_text = dialog_font.render(str(option), True, (255, 255, 255))
+        screen.blit(option_text, (option_rect.centerx - option_text.get_width()//2, option_rect.centery - option_text.get_height()//2))
+
+def draw_feedback():
+    feedback_box = pygame.Surface((WIDTH - 400, 80), pygame.SRCALPHA)
+    feedback_box.fill((0, 0, 0, 200))
+    screen.blit(feedback_box, (200, 200))
+    
+    feedback_text = font.render(answer_feedback, True, (255, 255, 255))
+    screen.blit(feedback_text, (WIDTH // 2 - feedback_text.get_width() // 2, 240))
+
+def draw_intro_screen():
+    # Dark overlay for better text visibility
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 160))
+    screen.blit(overlay, (0, 0))
+    
+    # Draw title
+    title = title_font.render("FOREST DEFENDERS", True, (255, 215, 0))
+    subtitle = font.render("Magical Numbers Adventure", True, (255, 255, 255))
+    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 50))
+    screen.blit(subtitle, (WIDTH // 2 - subtitle.get_width() // 2, 100))
+    
+    # Draw gems in spinning pattern
+    for i in range(3):
+        angle = intro_timer * 0.03 + (i * (2 * math.pi / 3))
+        x = WIDTH // 2 + int(200 * math.cos(angle)) - 40
+        y = HEIGHT // 2 + int(100 * math.sin(angle)) - 40
+        screen.blit(gem_images[i], (x, y))
+    
+    # Draw dialog box
+    draw_dialog_box()
+
+# Game loop
+running = True
+# Start with intro sequence
+dialog_active = True
+current_dialog = story_intro
+dialog_index = 0
+
+while running:
+    dt = clock.tick(60)
+    intro_timer += 1
+    
+    # Set background based on game stage
+    if game_state == GAMEPLAY:
+        if game_stage == 1:
+            background = gameplay_background
+        elif game_stage == 2:
+            background = cavern_background
+        elif game_stage == 3:
+            background = ravine_background
+    elif game_state in [INTRO, CHARACTER_SELECT]:
+        background = selection_background
+        
+    screen.blit(background, (0, 0))
+    
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if game_state == GAMEPLAY: 
+                    return_to_selection()
+                else:
+                    running = False
+            
+            if event.key == pygame.K_SPACE:
+                if dialog_active: 
+                    next_dialog()
+                elif game_state == GAMEPLAY and on_ground and not showing_feedback and not switching_stage:
+                    jump_velocity, on_ground = jump_strength, False
+            
+            # Character selection controls
+            if game_state == CHARACTER_SELECT:
+                if event.key in (pygame.K_LEFT, pygame.K_a):
+                    current_character_index = (current_character_index - 1) % len(characters)
+                elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                    current_character_index = (current_character_index + 1) % len(characters)
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    select_character(current_character_index)
+                    show_dialog(intro_dialog)
+        
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if game_state == CHARACTER_SELECT:
+                if left_arrow.collidepoint(event.pos):
+                    current_character_index = (current_character_index - 1) % len(characters)
+                elif right_arrow.collidepoint(event.pos):
+                    current_character_index = (current_character_index + 1) % len(characters)
+                
+                char_rect = characters[current_character_index]["img"].get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
+                if char_rect.collidepoint(event.pos):
+                    select_character(current_character_index)
+                    show_dialog(intro_dialog)
+            
+            # Question answer selection
+            elif game_state == GAMEPLAY and current_question and not question_answered and not showing_feedback and not switching_stage:
+                for i, option in enumerate(current_question["options"]):
+                    option_rect = pygame.Rect(120 + (i * 300), HEIGHT - 250, 250, 50)
+                    if option_rect.collidepoint(event.pos):
+                        check_answer(option)
+    
+    # Draw different screens based on game state
+    if game_state == INTRO:
+        draw_intro_screen()
+        
+    elif game_state == CHARACTER_SELECT:
+        # Character selection screen
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        screen.blit(overlay, (0, 0))
+        
+        title = font.render("CHOOSE YOUR HERO", True, (255, 255, 255))
+        title_shadow = font.render("CHOOSE YOUR HERO", True, (0, 0, 0))
+        screen.blit(title_shadow, (WIDTH // 2 - title.get_width() // 2 + 2, 42))
+        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 40))
+        
+        current_char = characters[current_character_index]["img"]
+        char_rect = current_char.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
+        
+        # Spotlight effect
+        spotlight = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        pygame.draw.circle(spotlight, (255, 255, 255, 100), char_rect.center, 150)
+        screen.blit(spotlight, (0, 0))
+        screen.blit(current_char, char_rect)
+        
+        name_text = small_font.render(characters[current_character_index]["name"], True, (255, 255, 255))
+        screen.blit(name_text, (WIDTH // 2 - name_text.get_width() // 2, HEIGHT // 2 + 100))
+        
+# Draw arrow navigation buttons
+        pygame.draw.polygon(screen, (255, 255, 255), [
+            (left_arrow.left + 10, left_arrow.centery),
+            (left_arrow.right - 10, left_arrow.top + 10),
+            (left_arrow.right - 10, left_arrow.bottom - 10)
+        ])
+        pygame.draw.polygon(screen, (255, 255, 255), [
+            (right_arrow.right - 10, right_arrow.centery),
+            (right_arrow.left + 10, right_arrow.top + 10),
+            (right_arrow.left + 10, right_arrow.bottom - 10)
+        ])
+        
+        instructions = small_font.render("Use LEFT/RIGHT arrows to browse, ENTER to select", True, (255, 255, 255))
+        screen.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 100))
+        
+        count_text = small_font.render(f"{current_character_index + 1}/{len(characters)}", True, (255, 255, 255))
+        screen.blit(count_text, (WIDTH // 2 - count_text.get_width() // 2, HEIGHT - 60))
+        
+    elif game_state == GAMEPLAY:
+        # Gameplay mode
+        keys = pygame.key.get_pressed()
+        moving = False
+        
+        # Process feedback timer
+        if showing_feedback:
+            feedback_timer -= 1
+            if feedback_timer <= 0:
+                showing_feedback = False
+                
+                if stage_complete:
+                    if game_stage == 1:
+                        show_dialog(npc_success)
+                    elif game_stage == 2:
+                        show_dialog(cavern_npc_success)
+                    elif game_stage == 3:
+                        show_dialog(ravine_npc_success)
+                elif question_answered:
+                    if game_stage == 1:
+                        show_dialog(npc_next_question)
+                    elif game_stage == 2:
+                        show_dialog(cavern_npc_next_question)
+                    elif game_stage == 3:
+                        show_dialog(ravine_npc_next_question)
+                    current_question = None
+                    
+        # Check if movement is allowed
+        can_move = not (dialog_active or showing_feedback or 
+                      (current_question and not question_answered) or 
+                      switching_stage)
+                      
+        if can_move:
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                player_rect.x -= speed
+                facing, moving = "left", True
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                player_rect.x += speed
+                facing, moving = "right", True
+            
+            # Gravity and jumping
+            if not on_ground:
+                player_rect.y += jump_velocity
+                jump_velocity += gravity
+                
+                if player_rect.bottom >= GROUND_LEVEL:
+                    player_rect.bottom, on_ground, jump_velocity = GROUND_LEVEL, True, 0
+                    
+        # Constrain player to screen
+        player_rect.x = max(0, min(WIDTH - player_rect.width, player_rect.x))
+        
+        # NPC interactions
+        if not dialog_active and not showing_feedback:
+            # Stage 1 NPC interaction
+            if game_stage == 1 and player_rect.colliderect(npc_rect) and intro_shown and not current_question:
+                if questions_completed < len(stage1_questions):
+                    show_dialog(npc_greeting if questions_completed == 0 else npc_next_question)
+                elif questions_completed >= len(stage1_questions) and not stage_complete:
+                    stage_complete = True
+                    show_dialog(npc_success)
+            
+            # Stage 2 NPC interaction
+            elif game_stage == 2 and player_rect.colliderect(cavern_npc_rect) and stage2_intro_shown and not current_question:
+                if questions_completed < len(stage2_questions):
+                    show_dialog(cavern_npc_greeting if questions_completed == 0 else cavern_npc_next_question)
+                elif questions_completed >= len(stage2_questions) and not stage_complete:
+                    stage_complete = True
+                    show_dialog(cavern_npc_success)
+            
+            # Ravine NPC interaction (follows same pattern as other stages)
+            elif game_stage == 3 and player_rect.colliderect(ravine_npc_rect) and ravine_intro_shown and not current_question:
+                if questions_completed < len(ravine_questions):
+                    show_dialog(ravine_npc_greeting if questions_completed == 0 else ravine_npc_next_question)
+                elif questions_completed >= len(ravine_questions) and not stage_complete:
+                    stage_complete = True
+                    show_dialog(ravine_npc_success)
+        
+        # Bounce animation
+        bounce_offset = int(2 * abs(math.sin(bounce_timer))) if on_ground else 0
+        if on_ground and moving:
+            bounce_timer += 0.2
+        
+        # Draw appropriate NPC for current stage
+        if game_stage == 1:
+            screen.blit(npc_img, npc_rect)
+        elif game_stage == 2:
+            screen.blit(cavern_npc_img, cavern_npc_rect)
+        elif game_stage == 3:
+            screen.blit(ravine_npc_img, ravine_npc_rect)
+        
+        # Stage indicators - condensed stage titles
+        stage_titles = ["Whispering Woods: Addition", "Mystic Caverns: Multiplication", "Emerald Ravine: Division"]
+        stage_text = font.render(f"Stage {game_stage}: {stage_titles[game_stage-1]}", True, (255, 255, 255))
+        screen.blit(stage_text, (20, 20))
+        
+        # Show question progress for all stages
+        if game_stage in [1, 2, 3]:
+            question_set = [stage1_questions, stage2_questions, ravine_questions][game_stage-1]
+            progress_text = small_font.render(f"Challenges: {questions_completed}/{len(question_set)}", True, (255, 255, 255))
+            screen.blit(progress_text, (20, 60))
+        
+        # Draw player with bounce effect
+        draw_pos = player_rect.copy()
+        draw_pos.y -= bounce_offset
+        screen.blit(pygame.transform.flip(player_img, facing == "left", False), draw_pos)
+        
+        # Handle dialog sequences - consolidated code
+        if not dialog_active:
+            if show_intro and not intro_shown:
+                show_dialog(intro_dialog)
+            elif game_stage == 2 and not stage2_intro_shown:
+                show_dialog(stage2_intro)
+            elif game_stage == 3 and not ravine_intro_shown:
+                show_dialog(ravine_intro)
+        
+        # Draw UI elements
+        if dialog_active:
+            draw_dialog_box()
+        
+        if current_question and not question_answered and not showing_feedback:
+            draw_question_box()
+
+        if showing_feedback:
+            draw_feedback()
+            
+        # Handle transitions between stages (condensed into single check)
+        if switching_stage:
+            transition_timer += 1
+            if transition_timer > 120:  # 2 seconds
+                if transition_to_stage2:
+                    transition_to_cavern()
+                elif transition_to_ravine:
+                    transition_to_ravine()
+                
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
