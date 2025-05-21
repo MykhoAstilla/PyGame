@@ -79,13 +79,13 @@ try:
     cavern_npc_img = pygame.transform.flip(scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC2.0.png")).convert_alpha(), 200), True, False)
     tree_npc_img = scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC3.0.png")).convert_alpha(), 200)
     # Make the boss larger (height 400 instead of 300)
-    boss_img = scale_image_to_height(pygame.image.load(os.path.join(image_path, "Boss.png")).convert_alpha(), 400)
+    boss_img = scale_image_to_height(pygame.image.load(os.path.join(image_path, "Boss.png")).convert_alpha(), 500)
 except Exception as e:
     print(f"NPC/Boss loading error: {e}")
     npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
     cavern_npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
     tree_npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
-    boss_img = pygame.Surface((200, 400), pygame.SRCALPHA)  # Make fallback boss bigger too
+    boss_img = pygame.Surface((200, 500), pygame.SRCALPHA)  # Make fallback boss bigger too
     pygame.draw.polygon(boss_img, (200, 50, 50), [(100, 0), (200, 200), (100, 400), (0, 200)])
 
 npc_rect = npc_img.get_rect(bottomleft=(WIDTH - 200, HEIGHT - 200))
