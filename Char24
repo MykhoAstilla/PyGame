@@ -1,0 +1,442 @@
+import pygame, sys, os, math, random, time
+
+# Initialize
+pygame.init()
+WIDTH, HEIGHT = 1400, 700
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Forest Defenders: Magical Numbers Adventure")
+clock = pygame.time.Clock()
+font, title_font, small_font, dialog_font = pygame.font.SysFont('Arial', 30), pygame.font.SysFont('Arial', 40, bold=True), pygame.font.SysFont('Arial', 24), pygame.font.SysFont('Arial', 22)
+GROUND_LEVEL, TREE_GROUND_LEVEL = HEIGHT - 210, HEIGHT - 150
+FINAL_GROUND_LEVEL = HEIGHT - 80  # New lower ground level for final stage
+image_path = r"C:\Users\Mykho\Downloads"
+character_names = ["C1", "C2", "C3"]
+
+# Game states
+INTRO, CHARACTER_SELECT, GAMEPLAY = 0, 1, 2
+
+# Load backgrounds
+try:
+    cavern_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Cavern.gif")).convert(), (WIDTH, HEIGHT))
+    selection_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background.jpg")).convert(), (WIDTH, HEIGHT))
+    gameplay_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background0.png")).convert(), (WIDTH, HEIGHT))
+    tree_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background1.jpg")).convert(), (WIDTH, HEIGHT))
+    # Add new final stage background
+    final_background = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Background2.jpg")).convert(), (WIDTH, HEIGHT))
+except Exception as e:
+    print(f"Background error: {e}")
+    selection_background = pygame.Surface((WIDTH, HEIGHT))
+    selection_background.fill((100, 150, 200))
+    gameplay_background = pygame.Surface((WIDTH, HEIGHT))
+    gameplay_background.fill((120, 170, 220))
+    cavern_background = pygame.Surface((WIDTH, HEIGHT))
+    cavern_background.fill((30, 40, 80))
+    tree_background = pygame.Surface((WIDTH, HEIGHT))
+    tree_background.fill((50, 120, 50))
+    final_background = pygame.Surface((WIDTH, HEIGHT))
+    final_background.fill((20, 20, 40))
+    
+background = selection_background
+
+# Load gem images
+gem_images = []
+for i in range(1, 4):
+    try:
+        gem_images.append(pygame.transform.scale(pygame.image.load(os.path.join(image_path, f"Gem{i}.png")).convert_alpha(), (80, 80)))
+    except Exception as e:
+        print(f"Gem{i} loading error: {e}")
+        temp_img = pygame.Surface((80, 80), pygame.SRCALPHA)
+        temp_img.fill((random.randint(50, 255), random.randint(50, 255), random.randint(50, 255), 200))
+        gem_images.append(temp_img)
+
+# Load characters
+CHARACTER_HEIGHT = 200
+characters = []
+for name in character_names:
+    file_path = os.path.join(image_path, name + ".png")
+    if os.path.exists(file_path):
+        img = pygame.image.load(file_path).convert_alpha()
+        scale = CHARACTER_HEIGHT / img.get_height()
+        img = pygame.transform.scale(img, (int(img.get_width() * scale), CHARACTER_HEIGHT))
+        characters.append({"img": img, "name": name})
+    else: print(f"Missing: {file_path}")
+if not characters:
+    for i, name in enumerate(character_names):
+        char_surface = pygame.Surface((75, CHARACTER_HEIGHT), pygame.SRCALPHA)
+        color = (100 + i*20, 150, 255 - i*20)
+        pygame.draw.ellipse(char_surface, color, (0, 0, 75, 135))
+        pygame.draw.circle(char_surface, color, (37, 30), 30)
+        characters.append({"img": char_surface, "name": name})
+
+# Helper function
+def scale_image_to_height(image, target_height):
+    scale_ratio = target_height / image.get_height()
+    return pygame.transform.scale(image, (int(image.get_width() * scale_ratio), target_height))
+
+# Load NPCs
+try:
+    npc_img = pygame.transform.flip(scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC1.0.png")).convert_alpha(), 200), True, False)
+    cavern_npc_img = pygame.transform.flip(scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC2.0.png")).convert_alpha(), 200), True, False)
+    tree_npc_img = scale_image_to_height(pygame.image.load(os.path.join(image_path, "NPC3.0.png")).convert_alpha(), 200)
+    # Make the boss larger (height 400 instead of 300)
+    boss_img = scale_image_to_height(pygame.image.load(os.path.join(image_path, "Boss.png")).convert_alpha(), 400)
+except Exception as e:
+    print(f"NPC/Boss loading error: {e}")
+    npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
+    cavern_npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
+    tree_npc_img = pygame.Surface((100, 200), pygame.SRCALPHA)
+    boss_img = pygame.Surface((200, 400), pygame.SRCALPHA)  # Make fallback boss bigger too
+    pygame.draw.polygon(boss_img, (200, 50, 50), [(100, 0), (200, 200), (100, 400), (0, 200)])
+
+npc_rect = npc_img.get_rect(bottomleft=(WIDTH - 200, HEIGHT - 200))
+cavern_npc_rect = cavern_npc_img.get_rect(bottomleft=(WIDTH - 200, HEIGHT - 200))
+tree_npc_rect = tree_npc_img.get_rect(bottomleft=(WIDTH - 200, TREE_GROUND_LEVEL))
+boss_rect = boss_img.get_rect(bottomleft=(WIDTH - 200, FINAL_GROUND_LEVEL))  # Position at the new ground level
+
+# Load heart image (we'll use a simple drawn heart if not available)
+try:
+    heart_img = pygame.transform.scale(pygame.image.load(os.path.join(image_path, "Heart.png")).convert_alpha(), (30, 30))
+except:
+    heart_img = pygame.Surface((30, 30), pygame.SRCALPHA)
+    pygame.draw.polygon(heart_img, (255, 0, 0), [(15, 5), (25, 15), (15, 25), (5, 15)])
+
+# Questions
+stage1_questions = [
+    {"question": "If the guardian collects 28 magical crystals and uses 13 for a spell, how many remain?", "answer": 15, "options": [12, 15, 16, 14]},
+    {"question": "The guardian needs 45 energy points to create a forcefield. With 27 already gathered, how many more must they find?", "answer": 18, "options": [17, 18, 19, 20]},
+    {"question": "Shadow creatures appear every 12 minutes. After 36 minutes, how many times have they visited our realm?", "answer": 3, "options": [3, 4, 5, 6]},
+    {"question": "A magical potion requires 24 drops of moonwater and 9 drops of sunlight essence. How many drops in total?", "answer": 33, "options": [31, 32, 33, 34]},
+    {"question": "Each protective enchantment lasts 17 minutes. To protect the forest for 85 minutes, how many enchantments must be cast?", "answer": 5, "options": [4, 5, 6, 7]}
+]
+
+stage2_questions = [
+    {"question": "The crystal sage needs to multiply 7 crystals by their power level of 8. What's the total energy?", "answer": 56, "options": [54, 55, 56, 57]},
+    {"question": "Six magical cave formations each contain 9 power nodes. How many nodes total?", "answer": 54, "options": [52, 53, 54, 55]},
+    {"question": "The cavern enchantment requires 7 groups of 12 crystal shards. How many shards in total?", "answer": 84, "options": [82, 83, 84, 85]},
+    {"question": "Each of the 11 ancient pillars needs 6 energy cores. How many cores are needed altogether?", "answer": 66, "options": [64, 65, 66, 67]},
+    {"question": "There are 9 crystal clusters, each with 8 crystals. How many crystals in all?", "answer": 72, "options": [70, 71, 72, 73]}
+]
+
+stage3_questions = [
+    {"question": "The Ancient Tree has 72 energy fruits that must be shared equally among 9 protectors. How many will each receive?", "answer": 8, "options": [7, 8, 9, 10]},
+    {"question": "A healing spell requires dividing 96 essence drops among 12 potion vials. How many drops per vial?", "answer": 8, "options": [6, 7, 8, 9]},
+    {"question": "The Tree Guardian must distribute 84 magical seeds equally to 7 forest regions. How many seeds per region?", "answer": 12, "options": [10, 11, 12, 13]},
+    {"question": "If 144 life crystals must be divided among 16 sacred trees, how many crystals will each tree receive?", "answer": 9, "options": [8, 9, 10, 11]},
+    {"question": "When 56 guardians divide themselves into 8 equal patrol groups, how many guardians are in each group?", "answer": 7, "options": [6, 7, 8, 9]}
+]
+
+# Add final stage questions that combine all operations
+final_questions = [
+    {"question": "The Shadow King has 15 void crystals. Each crystal absorbs 8 energy points. After using all crystals, how many energy points were absorbed?", "answer": 120, "options": [110, 120, 130, 140]},
+    {"question": "The Shadow King divides 96 dark minions into 6 battalions. If 23 minions are defeated, how many remain in total?", "answer": 73, "options": [63, 73, 83, 93]},
+    {"question": "To break the Shadow King's shield, you must cast 5 spells. Each spell requires 14 energy crystals. How many crystals do you need in total?", "answer": 70, "options": [60, 65, 70, 75]},
+    {"question": "The void gate absorbs 45 life points per minute. If you have 175 life points and lose 15 to a trap, how long can you survive in the void (in minutes)?", "answer": 3, "options": [2, 3, 4, 5]},
+    {"question": "The Shadow King steals 24 crystal fragments. You recover 9 fragments and then multiply your power by 6. How many fragments do you now have?", "answer": 54, "options": [54, 64, 74, 84]},
+    {"question": "To seal the void, you need 132 magical symbols divided equally into 11 sections. How many symbols in each section, then subtract 3 for the void tax?", "answer": 9, "options": [7, 8, 9, 10]},
+    {"question": "The Shadow King has 85 power points. You strike with 17 damage 4 times. How many power points does the Shadow King have left?", "answer": 17, "options": [15, 16, 17, 18]},
+    {"question": "You collect 7 gem shards, each with 8 energy units. Then you find 11 more energy units. What's your total energy?", "answer": 67, "options": [57, 67, 77, 87]},
+    {"question": "The void contains 144 shadow particles. You eliminate 48 and then divide the remainder equally among 8 magical containers. How many in each container?", "answer": 12, "options": [10, 11, 12, 13]},
+    {"question": "The Shadow King creates 9 illusions, each requiring 16 dark energy. If you dispel 3 illusions and reclaim half of their energy, how much dark energy is still active?", "answer": 120, "options": [96, 108, 120, 132]}
+]
+
+# Game state variables
+game_state, intro_timer, current_character_index = INTRO, 0, 0
+player_img, player_rect, facing = None, None, "right"
+speed, jump_velocity, jump_strength, gravity = 5, 0, -15, 0.8
+on_ground, bounce_timer = True, 0
+game_stage, dialog_active = 0, False
+current_dialog, dialog_index = [], 0
+current_question, question_answered = None, False
+questions_completed, show_intro, intro_shown = 0, False, False
+stage_complete, answer_feedback = False, ""
+feedback_timer, showing_feedback = 0, False
+transition_to_stage2, transition_timer, switching_stage = False, 0, False
+transition_to_stage3, stage3_intro_shown, stage2_intro_shown = False, False, False
+# Add final stage variables
+transition_to_final, final_intro_shown = False, False
+player_health, boss_health = 3, 10
+battle_active, battle_result = False, None
+final_stage_complete = False
+player_damaged_effect, player_damage_timer = False, 0
+boss_damaged_effect, boss_damage_timer = False, 0
+game_over = False
+
+# Navigation
+left_arrow = pygame.Rect(100, HEIGHT // 2, 50, 50)
+right_arrow = pygame.Rect(WIDTH - 150, HEIGHT // 2, 50, 50)
+
+# Dialog content - Compressed into lists of strings
+story_intro = [
+    "In the enchanted realm of Numeralis, harmony has long been maintained by the Three Crystal Gems of Magical Knowledge.",
+    "Each gem governs a vital domain of mathematical wisdom: Addition, Multiplication, and Division.",
+    "But disaster has struck! The tyrannical Shadow King has shattered the gems and hidden the fragments across three magical regions!",
+    "Without these gems, the natural order is unraveling — forests withering, caverns collapsing, the very fabric of our world in chaos.",
+    "Ancient prophecies speak of a chosen hero who will restore the gems, defeat the Shadow King, and bring balance back to Numeralis.",
+    "You must journey through three mystical realms, solving challenges that test your magical arithmetic abilities.",
+    "The fate of Numeralis rests in your hands. Are you ready to become the hero we desperately need?",
+    "Press SPACE to choose your character and begin your quest..."
+]
+
+# Other dialog lists
+dialogs = {
+    "intro": [
+        "Welcome to the Enchanted Forest, brave adventurer!",
+        "Our peaceful realm is under threat by the Shadow King, who has stolen the three Crystal Gems that maintain balance.",
+        "Without these gems, the magical numbers and ancient symbols of our world are falling into chaos!",
+        "You must journey through three realms to recover the crystal gems, using your magical reasoning skills to overcome challenges.",
+        "In each realm, you'll need to solve mystical puzzles to gather energy for the final confrontation.",
+        "This first area is the Whispering Woods, where the Forest Guardian awaits your help.",
+        "Reach the Forest Guardian on the right side of the screen to begin your quest.",
+        "Use arrow keys or WASD to move, and SPACE to jump. Good luck, young hero!"
+    ],
+    "npc_greeting": [
+        "Greetings, young hero! I am the Guardian of the Whispering Woods.",
+        "The Shadow King's minions have disrupted our forest's magical balance.",
+        "I need your help with mystical calculations to restore our protective enchantments.",
+        "Solve my magical challenges, and I'll grant you the power to proceed to the next realm.",
+        "Are you ready to begin your first challenge? (Press SPACE to continue)"
+    ],
+    "npc_next": [
+        "Excellent work, young wizard! But our forest still needs protection.",
+        "Here's another puzzle that needs your magical reasoning powers.",
+        "Focus your mind and trust your instincts! (Press SPACE to continue)"
+    ],
+    "npc_success": [
+        "Remarkable! Your magical reasoning skills are truly impressive!",
+        "You've helped restore balance to the Whispering Woods.",
+        "I grant you this fragment of the Crystal Gem of Addition.",
+        "I hereby give you this piece of robe as well for your journey.",
+        "Ahead lies the Mystic Caverns, where new challenges await.",
+        "The Cavern Guardian will test your powers of multiplication.",
+        "Be brave, and remember: magical numbers are your allies!",
+        "This fragment will transport you to the Caverns when you're ready.",
+        "(Press SPACE to continue to the Mystic Caverns - Stage 2)"
+    ],
+    "stage2_intro": [
+        "You've entered the Mystic Caverns, home to ancient crystals of great power.",
+        "The shimmering crystals cast an ethereal glow throughout the cavern.",
+        "In this sacred place, you must harness the power of multiplication to restore balance.",
+        "Find the Crystal Sage deeper in the cavern to begin your challenges.",
+        "(Use arrow keys or WASD to move, and SPACE to jump)"
+    ],
+    "cavern_greeting": [
+        "Ah, a visitor from the surface! I am the Crystal Sage of the Mystic Caverns.",
+        "The Shadow King's corruption has reached even these depths, disrupting our crystal formations.",
+        "We must use the power of multiplication to realign the magical energy flows.",
+        "Are you ready to test your multiplication skills? The cavern's fate depends on it!",
+        "(Press SPACE to continue)"
+    ],
+    "cavern_next": [
+        "Well done! Your magical arithmetic skills are impressive.",
+        "But there are more crystal formations that need realignment.",
+        "Here's another mystical calculation for you to solve.",
+        "(Press SPACE to continue)"
+    ],
+    "cavern_success": [
+        "Magnificent! You've successfully realigned all the crystal formations!",
+        "The Mystic Caverns once again resonate with harmonious energy.",
+        "Take this fragment of the Crystal Gem of Multiplication as a token of our gratitude.",
+        "Your next challenge awaits in the Tree of Life, where the power of division will be needed.",
+        "This crystal fragment will transport you there when you're ready.",
+        "(Press SPACE to continue to the Tree of Life - Stage 3)"
+    ],
+    # Stage 3 dialogs
+    "stage3_intro": [
+        "You've arrived at the ancient Tree of Life, the sacred heart of all magic in Numeralis.",
+        "The massive tree's branches reach toward the heavens, its roots deep within the earth.",
+        "This is where the energy of the world is carefully divided and distributed to maintain balance.",
+        "Find the Tree Guardian to help restore the final gem and complete your quest.",
+        "(Use arrow keys or WASD to move, and SPACE to jump)"
+    ],
+    "tree_greeting": [
+        "Welcome, brave one! I am the Tree Guardian, keeper of the balance of life.",
+        "The Shadow King's chaos has disrupted the Tree's ability to distribute magical energy.",
+        "We must use the power of division to restore the proper flow of life force.",
+        "Your skill with numbers will determine the fate of all living things in Numeralis.",
+        "Are you ready to begin the final set of challenges? (Press SPACE to continue)"
+    ],
+    "tree_next": [
+        "Impressive! Your mastery of division magic grows stronger.",
+        "But the Tree requires more balance to be fully restored.",
+        "Here is another challenge that tests your understanding of distribution and balance.",
+        "(Press SPACE to continue)"
+    ],
+    "tree_success": [
+        "Extraordinary! You have successfully restored balance to the Tree of Life!",
+        "The energy flows freely once more throughout all of Numeralis.",
+        "I present to you the final fragment - the Crystal Gem of Division.",
+        "With all three gems in your possession, you now have the power to confront the Shadow King.",
+        "The void gate to his realm has opened. You must face him at the Voidgate!",
+        "The fate of our world rests in your hands, brave hero!",
+        "(Press SPACE to enter the Voidgate - Final Stage)"
+    ],
+    # Add Final Stage Dialogs
+    "final_intro": [
+        "You step through the swirling void gate, the three Crystal Gems pulsing with power in your possession.",
+        "The air here is thick with malevolent energy, and reality itself seems twisted and unstable.",
+        "Before you stands the towering figure of the Shadow King, his dark form crackling with stolen magical energy.",
+        "This is the Voidgate - the crossroads between order and chaos, where all forms of magical mathematics collide.",
+        "You must combine all your knowledge of addition, multiplication, and division to defeat the Shadow King.",
+        "Each correct answer will weaken him, but be careful - your own life force is limited in this corrupted realm.",
+        "Move forward to confront the Shadow King and restore balance to Numeralis!",
+        "(Use arrow keys or WASD to move, and SPACE to jump)"
+    ],
+    "boss_greeting": [
+        "So, the prophesied hero thinks they can challenge ME? The Shadow King?",
+        "You may have recovered the Crystal Gems, but you understand nothing of their TRUE power!",
+        "I've spent centuries mastering the chaos between numbers, the void where logic breaks down.",
+        "Your pathetic mathematical skills are no match for my void magic!",
+        "Let us see if your mind can withstand the ultimate test of magical arithmetic!",
+        "Each wrong answer will drain your life force! You'll never survive my challenge!",
+        "(Press SPACE to begin the battle)"
+    ],
+    "boss_next": [
+        "Impressive... but that was merely a taste of my power!",
+        "The void grows stronger with each passing moment!",
+        "Let's see how you handle THIS magical conundrum!",
+        "(Press SPACE to continue)"
+    ],
+    "boss_damaged": [
+        "Argh! How is this possible? Your understanding of magical mathematics is stronger than I expected!",
+        "But don't get overconfident! My next challenge will surely break your mind!",
+        "(Press SPACE to continue)"
+    ],
+    "player_damaged": [
+        "Ha! Your mind is weak! Your understanding of magical mathematics is flawed!",
+        "Soon your life force will be drained, and I will rule Numeralis forever!",
+        "(Press SPACE to continue)"
+    ],
+    "boss_defeated": [
+        "NOOOO! THIS CANNOT BE! How could a mere mortal defeat ME, the Shadow King?",
+        "My void magic... fading... the Crystal Gems are returning to their true power...",
+        "The balance... I can feel it restoring throughout Numeralis...",
+        "You may have won today, hero, but the void is eternal! I will return someday...",
+        "AAAARRRRGGGHHH!!!",
+        "(Press SPACE to return to Numeralis as its savior)"
+    ],
+    "player_defeated": [
+        "HAHAHAHA! I knew your mind was too weak to challenge me!",
+        "Your life force is extinguished, and the Crystal Gems are mine once more!",
+        "Numeralis will descend into mathematical chaos, and I shall rule over the ruins!",
+        "Perhaps in another lifetime, another hero will arise... but it is too late for you!",
+        "(Press SPACE to return to character selection)"
+    ],
+    "final_victory": [
+        "As the Shadow King dissipates into the void, the Crystal Gems float before you, now restored to their full glory.",
+        "They combine into a brilliant light that engulfs you and transports you back to Numeralis.",
+        "You find yourself in a thriving, rejuvenated world. The forest teems with life, the caverns glitter with renewed energy,",
+        "and the Tree of Life stands tall and magnificent, its branches reaching toward a clear blue sky.",
+        "The guardians of each realm gather around you, bowing in gratitude and respect.",
+        "You have become the legendary hero of Numeralis, master of magical mathematics!",
+        "The balance is restored, but be vigilant – for where there is order, chaos always lurks in the shadows...",
+        "THE END",
+        "(Press SPACE to return to the main menu)"
+    ]
+}
+
+# Assign dialog references
+intro_dialog, npc_greeting, npc_next_question, npc_success = dialogs["intro"], dialogs["npc_greeting"], dialogs["npc_next"], dialogs["npc_success"]
+stage2_intro, cavern_npc_greeting, cavern_npc_next_question, cavern_npc_success = dialogs["stage2_intro"], dialogs["cavern_greeting"], dialogs["cavern_next"], dialogs["cavern_success"]
+stage3_intro, tree_npc_greeting, tree_npc_next_question, tree_npc_success = dialogs["stage3_intro"], dialogs["tree_greeting"], dialogs["tree_next"], dialogs["tree_success"]
+final_intro, boss_greeting, boss_next, boss_damaged = dialogs["final_intro"], dialogs["boss_greeting"], dialogs["boss_next"], dialogs["boss_damaged"]
+player_damaged, boss_defeated, player_defeated, final_victory = dialogs["player_damaged"], dialogs["boss_defeated"], dialogs["player_defeated"], dialogs["final_victory"]
+
+# Game functions
+def select_character(index):
+    global player_img, player_rect, facing, bounce_timer, background, game_stage, show_intro, game_state
+    player_img = characters[index]["img"]
+    player_rect = player_img.get_rect(bottom=GROUND_LEVEL, x=100)
+    facing, bounce_timer, background, game_stage, show_intro, game_state = "right", 0, gameplay_background, 1, True, GAMEPLAY
+
+def return_to_selection():
+    global game_state, background, game_stage, dialog_active, current_dialog, dialog_index
+    global show_intro, intro_shown, stage_complete, questions_completed, showing_feedback
+    global stage2_intro_shown, stage3_intro_shown, final_intro_shown, player_health, boss_health
+    global battle_active, battle_result, final_stage_complete, game_over, transition_to_final
+
+    game_state, background, game_stage = CHARACTER_SELECT, selection_background, 0
+    dialog_active, current_dialog, dialog_index = False, [], 0
+    show_intro, intro_shown, stage_complete = False, False, False
+    questions_completed, showing_feedback = 0, False
+    stage2_intro_shown, stage3_intro_shown, final_intro_shown = False, False, False
+    player_health, boss_health = 3, 10
+    battle_active, battle_result, final_stage_complete = False, None, False
+    game_over, transition_to_final = False, False
+
+def transition_to_cavern():
+    global game_stage, background, player_rect, stage_complete, questions_completed
+    global dialog_active, current_dialog, dialog_index, transition_to_stage2, switching_stage
+    global stage2_intro_shown, show_intro, player_img, current_question
+    
+    game_stage, background = 2, cavern_background
+    player_rect.bottom, player_rect.x = GROUND_LEVEL, 100
+    stage_complete, questions_completed = False, 0
+    dialog_active, current_dialog, dialog_index = True, stage2_intro, 0
+    transition_to_stage2, switching_stage = False, False
+    stage2_intro_shown, show_intro, current_question = False, True, None
+    
+    # Change character to C2 for the Mystic Caverns stage
+    for char in characters:
+        if char["name"] == "C2":
+            player_img = char["img"]
+            break
+
+def transition_to_tree():
+    global game_stage, background, player_rect, stage_complete, questions_completed
+    global dialog_active, current_dialog, dialog_index, transition_to_stage3, switching_stage
+    global stage3_intro_shown, show_intro, player_img, current_question
+    
+    game_stage, background = 3, tree_background
+    player_rect.bottom, player_rect.x = TREE_GROUND_LEVEL, 100
+    stage_complete, questions_completed = False, 0
+    dialog_active, current_dialog, dialog_index = True, stage3_intro, 0
+    transition_to_stage3, switching_stage = False, False
+    stage3_intro_shown, show_intro, current_question = False, True, None
+    
+    # Change character to C3 for the Tree of Life stage
+    for char in characters:
+        if char["name"] == "C3":
+            player_img = char["img"]
+            break
+
+def transition_to_final_stage():
+    global game_stage, background, player_rect, stage_complete, questions_completed
+    global dialog_active, current_dialog, dialog_index, transition_to_final, switching_stage
+    global final_intro_shown, show_intro, current_question, player_health, boss_health
+    global battle_active, battle_result, final_stage_complete
+    
+    game_stage, background = 4, final_background
+    player_rect.bottom, player_rect.x = FINAL_GROUND_LEVEL, 100  # Use the new lower ground level
+    stage_complete, questions_completed = False, 0
+    dialog_active, current_dialog, dialog_index = True, final_intro, 0
+    transition_to_final, switching_stage = False, False
+    final_intro_shown, show_intro, current_question = False, True, None
+    player_health, boss_health = 3, 10
+    battle_active, battle_result, final_stage_complete = False, None, False
+    
+    # Keep character as C3 for the final stage (no need to change it)
+
+def show_dialog(dialog_lines):
+    global dialog_active, current_dialog, dialog_index
+    dialog_active, current_dialog, dialog_index = True, dialog_lines, 0
+
+def next_dialog():
+    global dialog_index, dialog_active, intro_shown, show_intro, current_question
+    global transition_to_stage2, switching_stage, stage2_intro_shown, game_state
+    global transition_to_stage3, stage3_intro_shown, transition_to_final, final_intro_shown
+    global battle_active, battle_result, final_stage_complete, game_over
+    
+    if dialog_index < len(current_dialog) - 1:
+        dialog_index += 1
+    else:
+        dialog_active = False
+        
+        # Handle different dialog endings
+        if current_dialog == story_intro:
+            game_state = CHARACTER_SELECT
+        elif current_dialog == intro_dialog:
+            intro_shown, show_intro = True, False
+        elif current_dialog == stage2_intro:
+            stage2_intro_shown = True
+        elif current_dialog == stage3_intro:
+            stage3_intro_shown = True
